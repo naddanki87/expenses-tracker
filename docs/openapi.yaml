@@ -1,0 +1,541 @@
+openapi: 3.1.0
+info:
+  title: Expenses Tracker API
+  version: 1.0.0
+  summary: Log expenses, filter them by month and category, and get monthly totals per category.
+  description: |
+    Single-user API with no authentication (see docs/architecture.md, assumption A1).
+    Amounts are decimals with at most 2 fraction digits in the installation's single currency
+    (see `GET /api/v1/metadata`). Dates are ISO `YYYY-MM-DD`; months are `YYYY-MM`.
+    All errors are RFC 9457 problem details (`application/problem+json`).
+servers:
+  - url: http://localhost:8080
+    description: Local JAR
+  - url: http://10.0.2.2:8080
+    description: Host machine as seen from the Android emulator
+tags:
+  - name: expenses
+    description: Create, read, update, delete and filter expenses
+  - name: summaries
+    description: Aggregated totals
+  - name: metadata
+    description: Reference data for clients
+
+paths:
+  /api/v1/expenses:
+    get:
+      tags: [expenses]
+      operationId: listExpenses
+      summary: List expenses
+      description: |
+        Returns expenses ordered by `date` descending, then `id` descending.
+        `month` and `category` are optional and combined with AND. With neither, all expenses are returned.
+      parameters:
+        - $ref: '#/components/parameters/MonthQueryOptional'
+        - $ref: '#/components/parameters/CategoryQueryOptional'
+      responses:
+        '200':
+          description: Matching expenses (possibly empty)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Expense'
+              examples:
+                octoberFood:
+                  summary: GET /api/v1/expenses?month=2026-10&category=FOOD
+                  value:
+                    - id: 42
+                      amount: 12.50
+                      category: FOOD
+                      date: '2026-10-21'
+                      note: Lunch with team
+                      createdAt: '2026-10-21T12:34:56Z'
+                      updatedAt: '2026-10-21T12:34:56Z'
+                    - id: 37
+                      amount: 8.00
+                      category: FOOD
+                      date: '2026-10-03'
+                      note: null
+                      createdAt: '2026-10-03T08:00:00Z'
+                      updatedAt: '2026-10-03T08:00:00Z'
+                empty:
+                  summary: No matches
+                  value: []
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      tags: [expenses]
+      operationId: createExpense
+      summary: Create an expense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseRequest'
+            examples:
+              lunch:
+                value:
+                  amount: 12.50
+                  category: FOOD
+                  date: '2026-10-21'
+                  note: Lunch with team
+              noNote:
+                value:
+                  amount: 45
+                  category: TRANSPORT
+                  date: '2026-10-20'
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: URL of the new expense
+              schema:
+                type: string
+                example: /api/v1/expenses/42
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+              example:
+                id: 42
+                amount: 12.50
+                category: FOOD
+                date: '2026-10-21'
+                note: Lunch with team
+                createdAt: '2026-10-21T12:34:56Z'
+                updatedAt: '2026-10-21T12:34:56Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+
+  /api/v1/expenses/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ExpenseId'
+    get:
+      tags: [expenses]
+      operationId: getExpense
+      summary: Get one expense
+      responses:
+        '200':
+          description: The expense
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+              example:
+                id: 42
+                amount: 12.50
+                category: FOOD
+                date: '2026-10-21'
+                note: Lunch with team
+                createdAt: '2026-10-21T12:34:56Z'
+                updatedAt: '2026-10-21T12:34:56Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [expenses]
+      operationId: updateExpense
+      summary: Replace an expense
+      description: Full replacement. Same body and validation as create. `createdAt` is preserved, `updatedAt` is refreshed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseRequest'
+            example:
+              amount: 14.00
+              category: FOOD
+              date: '2026-10-21'
+              note: Lunch with team (incl. tip)
+      responses:
+        '200':
+          description: Updated expense
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+              example:
+                id: 42
+                amount: 14.00
+                category: FOOD
+                date: '2026-10-21'
+                note: Lunch with team (incl. tip)
+                createdAt: '2026-10-21T12:34:56Z'
+                updatedAt: '2026-10-22T09:10:11Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+    delete:
+      tags: [expenses]
+      operationId: deleteExpense
+      summary: Delete an expense
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/summaries/monthly:
+    get:
+      tags: [summaries]
+      operationId: getMonthlySummary
+      summary: Monthly total and totals per category
+      description: |
+        `categories` contains only categories with at least one expense in the month, ordered by
+        `total` descending, then `category` ascending. A month with no expenses returns
+        `total: 0.00`, `count: 0` and an empty `categories` array.
+      parameters:
+        - $ref: '#/components/parameters/MonthQueryRequired'
+      responses:
+        '200':
+          description: Summary for the month
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonthlySummary'
+              examples:
+                october:
+                  value:
+                    month: '2026-10'
+                    currency: USD
+                    total: 245.50
+                    count: 7
+                    categories:
+                      - category: HOUSING
+                        total: 150.00
+                        count: 1
+                      - category: FOOD
+                        total: 60.50
+                        count: 4
+                      - category: TRANSPORT
+                        total: 35.00
+                        count: 2
+                emptyMonth:
+                  value:
+                    month: '2026-09'
+                    currency: USD
+                    total: 0.00
+                    count: 0
+                    categories: []
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/metadata:
+    get:
+      tags: [metadata]
+      operationId: getMetadata
+      summary: Currency and category list
+      responses:
+        '200':
+          description: Reference data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metadata'
+              example:
+                currency: USD
+                categories:
+                  - { code: FOOD, displayName: Food }
+                  - { code: GROCERIES, displayName: Groceries }
+                  - { code: TRANSPORT, displayName: Transport }
+                  - { code: HOUSING, displayName: Housing }
+                  - { code: UTILITIES, displayName: Utilities }
+                  - { code: HEALTH, displayName: Health }
+                  - { code: ENTERTAINMENT, displayName: Entertainment }
+                  - { code: SHOPPING, displayName: Shopping }
+                  - { code: EDUCATION, displayName: Education }
+                  - { code: TRAVEL, displayName: Travel }
+                  - { code: OTHER, displayName: Other }
+
+components:
+  parameters:
+    ExpenseId:
+      name: id
+      in: path
+      required: true
+      description: Expense ID
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+      example: 42
+    MonthQueryOptional:
+      name: month
+      in: query
+      required: false
+      description: Calendar month `YYYY-MM`
+      schema:
+        $ref: '#/components/schemas/YearMonth'
+      example: '2026-10'
+    MonthQueryRequired:
+      name: month
+      in: query
+      required: true
+      description: Calendar month `YYYY-MM`
+      schema:
+        $ref: '#/components/schemas/YearMonth'
+      example: '2026-10'
+    CategoryQueryOptional:
+      name: category
+      in: query
+      required: false
+      description: Category code
+      schema:
+        $ref: '#/components/schemas/Category'
+      example: FOOD
+
+  responses:
+    BadRequest:
+      description: Invalid input (validation error or malformed request)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            invalidBody:
+              summary: Body validation failed
+              value:
+                type: /problems/validation-error
+                title: Validation failed
+                status: 400
+                detail: Request has 2 invalid fields
+                instance: /api/v1/expenses
+                errors:
+                  - field: amount
+                    message: must be greater than 0
+                  - field: date
+                    message: must not be in the future
+            invalidMonth:
+              summary: Bad query parameter
+              value:
+                type: /problems/validation-error
+                title: Validation failed
+                status: 400
+                detail: Request has 1 invalid parameter
+                instance: /api/v1/summaries/monthly
+                errors:
+                  - field: month
+                    message: must be a month in the form YYYY-MM
+            malformed:
+              summary: Unreadable JSON or unknown enum value
+              value:
+                type: /problems/malformed-request
+                title: Malformed request
+                status: 400
+                detail: Request body could not be read
+                instance: /api/v1/expenses
+                errors:
+                  - field: category
+                    message: must be one of FOOD, GROCERIES, TRANSPORT, HOUSING, UTILITIES, HEALTH, ENTERTAINMENT, SHOPPING, EDUCATION, TRAVEL, OTHER
+    NotFound:
+      description: Expense does not exist
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: /problems/not-found
+            title: Not found
+            status: 404
+            detail: Expense 999 not found
+            instance: /api/v1/expenses/999
+    UnsupportedMediaType:
+      description: Request body is not application/json
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unsupported Media Type
+            status: 415
+            detail: Content-Type 'text/plain' is not supported.
+            instance: /api/v1/expenses
+
+  schemas:
+    Category:
+      type: string
+      enum: [FOOD, GROCERIES, TRANSPORT, HOUSING, UTILITIES, HEALTH, ENTERTAINMENT, SHOPPING, EDUCATION, TRAVEL, OTHER]
+      example: FOOD
+
+    YearMonth:
+      type: string
+      pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+      example: '2026-10'
+
+    Amount:
+      type: number
+      description: Positive amount, at most 10 integer digits and 2 fraction digits. Use BigDecimal, never floating point.
+      exclusiveMinimum: 0
+      maximum: 9999999999.99
+      multipleOf: 0.01
+      example: 12.50
+
+    MoneyTotal:
+      type: number
+      description: Sum of amounts, always scale 2.
+      minimum: 0
+      example: 245.50
+
+    ExpenseRequest:
+      type: object
+      description: Unknown properties are ignored by the server; clients must not rely on that.
+      required: [amount, category, date]
+      properties:
+        amount:
+          $ref: '#/components/schemas/Amount'
+        category:
+          $ref: '#/components/schemas/Category'
+        date:
+          type: string
+          format: date
+          description: Expense date; must not be after the server's current date.
+          example: '2026-10-21'
+        note:
+          type: [string, 'null']
+          maxLength: 500
+          description: Optional. Trimmed by the server; blank becomes null.
+          example: Lunch with team
+
+    Expense:
+      type: object
+      required: [id, amount, category, date, note, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 42
+        amount:
+          $ref: '#/components/schemas/Amount'
+        category:
+          $ref: '#/components/schemas/Category'
+        date:
+          type: string
+          format: date
+          example: '2026-10-21'
+        note:
+          type: [string, 'null']
+          maxLength: 500
+          example: Lunch with team
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-10-21T12:34:56Z'
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2026-10-21T12:34:56Z'
+
+    CategoryTotal:
+      type: object
+      required: [category, total, count]
+      properties:
+        category:
+          $ref: '#/components/schemas/Category'
+        total:
+          $ref: '#/components/schemas/MoneyTotal'
+        count:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 4
+
+    MonthlySummary:
+      type: object
+      required: [month, currency, total, count, categories]
+      properties:
+        month:
+          $ref: '#/components/schemas/YearMonth'
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: USD
+        total:
+          $ref: '#/components/schemas/MoneyTotal'
+        count:
+          type: integer
+          format: int64
+          minimum: 0
+          example: 7
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryTotal'
+
+    CategoryInfo:
+      type: object
+      required: [code, displayName]
+      properties:
+        code:
+          $ref: '#/components/schemas/Category'
+        displayName:
+          type: string
+          example: Food
+
+    Metadata:
+      type: object
+      required: [currency, categories]
+      properties:
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 code configured by APP_CURRENCY
+          example: USD
+        categories:
+          type: array
+          description: All categories, in enum declaration order
+          items:
+            $ref: '#/components/schemas/CategoryInfo'
+
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          description: Body field or query/path parameter name
+          example: amount
+        message:
+          type: string
+          example: must be greater than 0
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          example: /problems/validation-error
+        title:
+          type: string
+          example: Validation failed
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: Request has 1 invalid field
+        instance:
+          type: string
+          format: uri-reference
+          example: /api/v1/expenses
+        errors:
+          type: array
+          description: Present for 400 responses when specific fields or parameters are at fault
+          items:
+            $ref: '#/components/schemas/FieldError'
