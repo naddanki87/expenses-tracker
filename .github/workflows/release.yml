@@ -27,7 +27,7 @@ jobs:
 
       - name: Build the APK
         working-directory: android
-        run: ./gradlew testDebugUnitTest assembleDebug --no-daemon
+        run: ./gradlew lint testDebugUnitTest jacocoCoverageVerification assembleDebug --no-daemon
 
       - name: Collect artifacts
         run: |

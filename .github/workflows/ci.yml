@@ -46,8 +46,8 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Lint, unit tests, APK
-        run: ./gradlew lint testDebugUnitTest assembleDebug --no-daemon
+      - name: Lint, unit tests, coverage gate, APK
+        run: ./gradlew lint testDebugUnitTest jacocoCoverageVerification spotlessCheck assembleDebug --no-daemon
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
