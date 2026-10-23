@@ -359,7 +359,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
           example:
-            type: about:blank
+            type: /problems/http-415
             title: Unsupported Media Type
             status: 415
             detail: Content-Type 'text/plain' is not supported.

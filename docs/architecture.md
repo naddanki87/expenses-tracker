@@ -141,8 +141,9 @@ All errors are **RFC 9457 problem details** with `Content-Type: application/prob
 | Bad query parameter (bad `month`, unknown `category`, non-numeric `id`) | 400 | `/problems/validation-error` | `errors` names the parameter |
 | Malformed / unreadable JSON, unknown enum in body | 400 | `/problems/malformed-request` | `errors` names the field when it can be determined |
 | Expense ID not found | 404 | `/problems/not-found` | |
-| Unsupported method / media type | 405 / 415 | `about:blank` | Spring defaults |
-| Unexpected error | 500 | `about:blank` | Generic `detail`; stack trace only in the server log |
+| Unsupported method / media type | 405 / 415 | `/problems/http-405`, `/problems/http-415` | Framework-generated; `type` set explicitly because Spring 7 omits `about:blank` |
+| Unmapped path | 404 | `/problems/http-404` | Framework-generated |
+| Unexpected error | 500 | `/problems/http-500` | Generic `detail`; stack trace only in the server log |
 
 Example:
 ```json
