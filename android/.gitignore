@@ -7,3 +7,6 @@ captures/
 *.jks
 *.keystore
 .env
+
+# The repo-wide "data/" rule (H2 files) must not hide the app data package.
+!data/
