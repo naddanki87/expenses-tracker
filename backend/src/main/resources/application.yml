@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: expenses-tracker
+  datasource:
+    url: ${DB_URL:jdbc:h2:file:./data/expenses;MODE=PostgreSQL;AUTO_SERVER=TRUE}
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # schema comes only from Flyway migrations
+  flyway:
+    enabled: true
+
+server:
+  port: ${PORT:8080}
+
+app:
+  currency: ${APP_CURRENCY:USD}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+---
+# Optional PostgreSQL profile: java -jar expenses-tracker-1.0.0.jar --spring.profiles.active=postgres
+spring:
+  config:
+    activate:
+      on-profile: postgres
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/expenses}
+    username: ${DB_USER:expenses}
+    password: ${DB_PASSWORD}
