@@ -200,6 +200,7 @@ class ExpenseControllerTest {
     mvc.perform(post("/api/v1/expenses").contentType(MediaType.TEXT_PLAIN).content("hello"))
         .andExpect(status().isUnsupportedMediaType())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        .andExpect(jsonPath("$.type").value("/problems/http-415"))
         .andExpect(jsonPath("$.status").value(415));
   }
 
@@ -316,7 +317,8 @@ class ExpenseControllerTest {
   void unsupportedMethodReturns405ProblemDetails() throws Exception {
     mvc.perform(delete("/api/v1/expenses"))
         .andExpect(status().isMethodNotAllowed())
-        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        .andExpect(jsonPath("$.type").value("/problems/http-405"));
   }
 
   @Test
@@ -326,6 +328,7 @@ class ExpenseControllerTest {
     mvc.perform(get("/api/v1/expenses/1"))
         .andExpect(status().isInternalServerError())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        .andExpect(jsonPath("$.type").value("/problems/http-500"))
         .andExpect(jsonPath("$.status").value(500))
         .andExpect(jsonPath("$.detail").value("An unexpected error occurred"))
         .andExpect(

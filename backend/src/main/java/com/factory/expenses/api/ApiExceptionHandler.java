@@ -72,7 +72,28 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     problem.setTitle("Internal Server Error");
     problem.setInstance(URI.create(request.getRequestURI()));
+    declareDefaultType(problem);
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
+  }
+
+  @Override
+  protected ResponseEntity<Object> createResponseEntity(
+      Object body, HttpHeaders headers, HttpStatusCode statusCode, WebRequest request) {
+    if (body instanceof ProblemDetail problem) {
+      declareDefaultType(problem);
+    }
+    return super.createResponseEntity(body, headers, statusCode, request);
+  }
+
+  /**
+   * Jackson omits the default "about:blank" type, but the contract's Problem schema requires the
+   * member, so framework-generated problems get an explicit per-status type.
+   */
+  private static void declareDefaultType(ProblemDetail problem) {
+    URI type = problem.getType();
+    if (type == null || "about:blank".equals(type.toString())) {
+      problem.setType(URI.create("/problems/http-" + problem.getStatus()));
+    }
   }
 
   @Override
